@@ -7,7 +7,7 @@ My personal alternative to Magic Mirror. Built using python to allow easier impl
 
 ## Current functions
 - Current version is only able to take input from user and reply back
-  -- Voice is substandard, current focus of improvement
+--- Voice is substandard, current focus of improvement
 
 ## Future functions
 - Add a clock
