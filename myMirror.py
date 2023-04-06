@@ -4,7 +4,6 @@ import pyaudio
 import wave
 import threading
 import pyttsx3
-import animationHandler as anim
 import chatScript as chatbot
 
 # Text to Speech Variables
