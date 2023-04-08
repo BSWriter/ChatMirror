@@ -1,108 +1,94 @@
 import tkinter as tk
 import random
-import pyaudio
-import wave
-import threading
-import pyttsx3
 import chatScript as chatbot
-
-# Text to Speech Variables
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 44100
-CHUNK = 1024
-RECORD_SECONDS = 5
-WAVE_OUTPUT_FILENAME = "output.wav"
-
-# Chatbot Variables
-pastResponses = []
-pastInputs = []
+import time
+import threading
 
 class MainMirror(tk.Tk):
         def __init__(self):
                 tk.Tk.__init__(self)
+                # Set Container attributes
                 self.attributes('-fullscreen', True)
                 self.configure(bg='black')
+
+                # Initialize class variables
+                self.numthreads = 0
+                self.max_numthreads = 2
+                self.alpha = 0
+                self.alphaDelta = 5
+                self.chatThread = threading.Thread(target=chatbot.startProcess, args=(self,))
+                self.activeThreads = {"chat":None}
+                self.updateTime = 50 # Milliseconds for update loop 
+                self.blinkWait = 1000 # Milliseconds for timeLabel to startup blinking animation
                 
-                # Initialize Mirror Text
-                self.label = tk.Label(self, text=self.startup(), font=("Helvetica", 36), fg="white", bg="black", wraplength=1000)
-                self.label.pack(expand=True)
-                #anim.pulseAnim(self.label)
+                # Initialize Chatbot Label, place in center
+                self.chatLabel = tk.Label(self, text=self.startup(), font=("Helvetica", 36), fg="white", bg="black", wraplength=1000)
+                self.chatLabel.pack(expand=True)
+
+                # Initialize Time Label, place in the upper left corner
+                self.timeLabel = tk.Label(self, font=("Helvetica", 26), fg=f"#{self.alpha:02x}{self.alpha:02x}{self.alpha:02x}", bg="black")
+                self.timeLabel.place(relx = 0.0, rely = 0.0, anchor ='nw')
 
                 # Keybindings
                 self.bind('<Alt-q>', self.quit_app)
                 self.bind("<space>", self.on_space_press)
-                
-                # TtoS engine initialization and configuration
-                self.engine = pyttsx3.init()
-                self.engine.setProperty('rate', 150)
-                self.engine.setProperty('volume', 0.7)
-                voices = self.engine.getProperty('voices')
-                self.engine.setProperty('voice', voices[1].id)
+
+                # Start update
+                self.update()
+                # NUM_THREADS += 1
 
         def startup(self):
                 openers = ["Good Morning.", "Howdy!", "How's the day going?", "Hmmm?"]
                 return random.choice(openers)
         
         def quit_app(self, event=None):
+                for k, v in self.activeThreads.items():
+                        if v is not None:
+                                v.join()
                 self.destroy()
         
-        def speakOutput(self, out):
-                self.engine.say(out)
-                self.engine.runAndWait()
-    
+        # If SPACE is pressed, start chatbot process
         def on_space_press(self, event):
-                global pastResponses
-                global pastInputs
-                    
-                # Update the label text
-                self.label.config(text="Recording")
-                # Update the widget display immediately
-                self.label.update_idletasks()
-                
-                audio = pyaudio.PyAudio()
+                if(not self.chatThread.is_alive() and self.numthreads < self.max_numthreads 
+                   and self.activeThreads["chat"] is None):
+                        self.numthreads += 1
+                        self.chatThread = threading.Thread(target=chatbot.startProcess, args=(self,))
+                        self.activeThreads["chat"] = self.chatThread
+                        self.chatThread.start()
 
-                # open microphone stream
-                stream = audio.open(format=FORMAT, channels=CHANNELS,
-                                rate=RATE, input=True,
-                                frames_per_buffer=CHUNK)
-                                
-                frames = []
+        def update(self):
+                # Update Time label display
+                current_time = time.strftime("%H:%M:%S")
+                self.timeLabel.config(text=current_time)
+                self.timeLabel.update_idletasks()
 
-                # record for the specified number of seconds
-                for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
-                    data = stream.read(CHUNK)
-                    frames.append(data)
-                    
-                # Update the label text
-                self.label.config(text="Finsihed Recording")
-                # Update the widget display immediately
-                self.label.update_idletasks()
+                # Handle Time label blinking
+                if self.blinkWait <= 0:
+                        alpha = self.alpha
+                        alphaDelta = self.alphaDelta
+                        
+                        alpha += alphaDelta
+                        self.timeLabel.config(fg=f"#{alpha:02x}{alpha:02x}{alpha:02x}")
+                        self.timeLabel.update_idletasks()
+                        
+                        if alpha >= 105:
+                                alpha = 105
+                                alphaDelta = -5
+                                self.blinkWait = 1000
+                        elif alpha <= 25:
+                                alpha = 25
+                                alphaDelta = 5
 
-                # stop the stream and close the audio device
-                stream.stop_stream()
-                stream.close()
-                audio.terminate()
+                        self.alpha = alpha
+                        self.alphaDelta = alphaDelta
+                else:
+                        self.blinkWait -= self.updateTime
 
-                # save the recorded data as a wave file
-                wf = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
-                wf.setnchannels(CHANNELS)
-                wf.setsampwidth(audio.get_sample_size(FORMAT))
-                wf.setframerate(RATE)
-                wf.writeframes(b''.join(frames))
-                wf.close()
-                
-                # Get the "Chatbot's response"
-                output = chatbot.ChatQuery(pastResponses, pastInputs)
-                response = output['generated_text']
-                pastResponses = output['conversation']['generated_responses']
-                pastInputs = output['conversation']['past_user_inputs']
-                
-                # Update the label text
-                self.label.config(text=response)
-                # Update the widget display immediately
-                self.label.update_idletasks()
-                
-                self.speakOutput(response)
+                for k, v in self.activeThreads.items():
+                        if v is not None:
+                                if not v.is_alive():
+                                        self.numthreads -= 1
+                                        v.join()
+                                        self.activeThreads[k] = None
 
-
+                self.after(self.updateTime, self.update)
